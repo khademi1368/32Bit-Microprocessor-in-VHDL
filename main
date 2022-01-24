@@ -1,0 +1,1735 @@
+--top level (cpu + memory)
+--------------------------------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+--------------------------------------------------
+entity top is
+end top;
+--------------------------------------------------
+architecture behave of top is
+component mem
+port (addr : in std_logic_vector (31 downto 0);
+sel, rw : in std_logic;
+ready : out std_logic;
+data : inout std_logic_vector (31 downto 0));
+end component;
+component cpu32bit
+port ( clock,reset,ready:in std_logic;
+data:inout std_logic_vector (31 downto 0);
+addr:out std_logic_vector (31 downto 0);
+vma,rw:out std_logic);
+end component;
+signal addr, data : std_logic_vector (31 downto 0);
+signal vma, rw, ready : std_logic;
+signal clock, reset : std_logic := '0';
+begin
+clock <= not clock after 50 ns;
+reset <= '1', '0' after 100 ns;
+m1 : mem port map (addr, vma, rw, ready, data);
+u1 : cpu32bit port map(clock, reset, ready,data, addr,vma, rw );
+end behave;
+####################################################################
+
+
+
+--cpu 32 bit
+------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+------------------------------------------------------
+entity cpu32bit is
+port ( clock,reset,ready:in std_logic;
+data:inout std_logic_vector (31 downto 0);
+addr:out std_logic_vector (31 downto 0);
+vma,rw:out std_logic);
+end cpu32bit;
+------------------------------------------------------
+architecture bev32 of cpu32bit is
+------------------------------------------------------
+--part1
+component trireg
+port(wr,rd:in std_logic;
+a:in std_logic_vector (31 downto 0);
+y:out std_logic_vector (31 downto 0));
+end component;
+------------------------------------------------------
+--part2
+component bireg
+port(clk:in std_logic;
+a:in std_logic_vector (31 downto 0);
+y:out std_logic_vector (31 downto 0));
+end component;
+------------------------------------------------------
+--part3
+component regarray
+port(wr:in std_logic;
+rd:in std_logic;
+clk:in std_logic;
+sel:in std_logic_vector (4 downto 0);
+datain:in std_logic_vector (31 downto 0);
+dataout:out std_logic_vector (31 downto 0));
+end component;
+------------------------------------------------------
+--part4
+component comparetor
+port(sel:in std_logic_vector (3 downto 0);
+a,b:in std_logic_vector (31 downto 0);
+y:out std_logic);
+end component;
+------------------------------------------------------
+--part5
+component alu
+port(sel:in std_logic_vector (4 downto 0);
+a,b:in std_logic_vector (31 downto 0);
+y1,y2:out std_logic_vector (31 downto 0));
+end component;
+-----------------------------------------------------
+--part6
+component shifter
+port(sel:in std_logic_vector (3 downto 0);
+a,b:in std_logic_vector (31 downto 0);
+y:out std_logic_vector (31 downto 0));
+end component;
+-----------------------------------------------------
+--part7
+component control
+port(ready,clock,reset,compout:in std_logic;
+instrreg:in std_logic_vector(31 downto 0);
+--ir reg input to control unit
+progcntrwr,progcntrrd:out std_logic; --pc reg ctrl
+outregwr,outregrd:out std_logic; --alu out reg ctrl
+addrregwr:out std_logic; --address reg ctrl
+opregwr,opregrd:out std_logic; --accomalotor reg ctrl
+instrwr:out std_logic; --ir reg ctrl
+regwr,regrd:out std_logic; --reg array ctrl
+regsel:out std_logic_vector (4 downto 0); --regarray cmd
+shiftsel:out std_logic_vector (3 downto 0); --shifter cmd
+alusel:out std_logic_vector (4 downto 0); --alu cmd
+compsel:out std_logic_vector (3 downto 0); --comparator cmd
+vma,rw:out std_logic);
+end component;
+-----------------------------------------------------
+--define internal signal
+signal addrwr,pcwr,pcrd,oregwr,oregrd,regwr,regrd,opwr,oprd,
+compout,irwr:std_logic;
+signal opout,aluout,shiftout,irout:std_logic_vector(31 downto 0);
+signal regsel:std_logic_vector(4 downto 0);
+signal shiftsel:std_logic_vector(3 downto 0);
+signal alusel:std_logic_vector(4 downto 0);
+signal compsel:std_logic_vector(3 downto 0);
+begin
+--wr,rd,in,out
+pcr32:trireg port map (pcwr,pcrd,data,data);
+opr32:trireg port map (opwr,oprd,data,opout);
+outr32:trireg port map (oregwr,oregrd,shiftout,data);
+---------------------------------------------------------
+--wr,in,out
+adr32:bireg port map (addrwr,data,addr);
+ir32:bireg port map (irwr,data,irout);
+---------------------------------------------------------
+--wr,rd,clk,in,out
+regary32:regarray port map (regwr,regrd,clock,regsel,data,data);
+---------------------------------------------------------
+--sel,in,in,out(1)
+comp32:comparetor port map (compsel,opout,data,compout);
+---------------------------------------------------------
+--sel,in,in,out
+alu32:alu port map (alusel,data,opout,aluout,aluout);
+---------------------------------------------------------
+--sel,in1,in2,out
+shift32:shifter port map (shiftsel,aluout,opout,shiftout);
+---------------------------------------------------------
+ctrl32:control port map(ready,clock,reset,compout,irout,pcwr,
+pcrd,oregwr,oregrd,addrwr,opwr,opwr,irwr,regwr,regrd,regsel,
+shiftsel,alusel,compsel,vma,rw);
+end bev32;
+############################################################################
+3 way Register :
+--part 1
+--Trireg
+------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_arith;
+-----------------------------------------------------
+entity trireg is
+port(wr,rd:in std_logic;
+a:in std_logic_vector (31 downto 0);
+y:out std_logic_vector (31 downto 0));
+end entity;
+------------------------------------------------------
+architecture bev32 of trireg is
+signal tempreg:std_logic_vector (31 downto 0);
+begin
+process(wr)
+begin
+if ( wr'event and wr ='1') then
+tempreg <= a;
+end if;
+end process;
+process(rd,tempreg)
+begin
+92
+if (rd = '1') then
+y <= tempreg;
+else if (rd = '0') then
+y <= (others=>'Z'); --1ns
+else
+y <= (others=>'X'); --1ns
+end if;
+end if;
+end process;
+end bev32;
+##############################################################
+2 Way Register :
+--part 2
+--Bireg unit
+---------------------------------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+---------------------------------------------------
+entity bireg is
+port(clk:in std_logic;
+a:in std_logic_vector (31 downto 0);
+y:out std_logic_vector (31 downto 0));
+end bireg;
+---------------------------------------------------
+architecture bev32 of bireg is
+begin
+process(clk)
+begin
+if ( clk'event and clk = '1') then
+y <= a ; --after 1 ns;
+end if;
+end process;
+end bev32;
+###############################################################3
+Register Array :
+--part 3
+-- register array unit
+----------------------------------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.std_logic_unsigned.all;
+----------------------------------------------------
+entity regarray is
+port(wr:in std_logic;
+rd:in std_logic;
+clk:in std_logic;
+sel:in std_logic_vector (4 downto 0);
+datain:in std_logic_vector (31 downto 0);
+dataout:out std_logic_vector (31 downto 0));
+end regarray;
+-----------------------------------------------------
+architecture bev32 of regarray is
+type ram_type is array (31 downto 0) of std_logic_vector (31 downto 0);
+signal aryfile : ram_type; --ram 32x32
+signal temp : std_logic_vector (31 downto 0); --internal value
+begin
+process(clk,sel)
+begin
+if (clk'event and clk = '1') then
+if (wr = '1') then
+aryfile(conv_integer(sel)) <= datain;
+end if;
+end if;
+temp <= aryfile(conv_integer(sel)) after 1 ns;
+end process;
+process(rd, temp)
+begin
+if rd = '1' then
+dataout <= temp after 1 ns;
+else
+dataout <= (others=>'Z') after 1 ns;
+end if;
+end process;
+end bev32;
+#############################################################
+
+Camparetor Unit:
+--part 4
+--Camparetor unit
+--------------------------------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.std_logic_arith.all;
+--------------------------------------------------
+entity comparetor is
+port(sel:in std_logic_vector (3 downto 0);
+a,b:in std_logic_vector (31 downto 0);
+y:out std_logic);
+end comparetor;
+--------------------------------------------------
+architecture bev32 of comparetor is
+begin
+process(a, b, sel)
+begin
+case sel is
+when "0000" => --equal
+if a = b then
+y <= '1' after 1 ns;
+else
+y <= '0' after 1 ns;
+end if;
+when "0001" => --not equal
+if a /= b then
+y <= '1' after 1 ns;
+else
+y <= '0' after 1 ns;
+end if;
+when "0010" => --greater than
+if a > b then
+y <= '1' after 1 ns;
+else
+y <= '0' after 1 ns;
+end if;
+when "0011" => --less then
+if a < b then
+y <= '1' after 1 ns;
+else
+y <= '0' after 1 ns;
+end if;
+when "0100" => --greater then equal
+if a >= b then
+y <= '1' after 1 ns;
+else
+y <= '0' after 1 ns;
+end if;
+when "0101" => --less then equal
+if a <= b then
+y <= '1' after 1 ns;
+else
+y <= '0' after 1 ns;
+end if;
+when others => y <= 'Z';
+--other value of sel => Z
+end case;
+end process;
+end bev32;
+#########################################################
+ ALU :
+--part 5
+--ALU unit
+-------------------------------------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.std_logic_unsigned.all;
+-------------------------------------------------------
+entity alu is
+port(sel:in std_logic_vector (4 downto 0);
+a,b:in std_logic_vector (31 downto 0);
+y1,y2:out std_logic_vector (31 downto 0));
+end alu;
+-------------------------------------------------------
+architecture bev32 of alu is
+begin
+process(a, b, sel)
+begin
+case sel is
+-- a+b
+when "00000" =>
+y1 <= a+b after 1 ns;
+-- a-b
+when "00001" =>
+y1 <= a-b after 1 ns;
+-- a*b
+when "00010" =>
+y1 <= a(15 downto 0)*b(15 downto 0) after 1 ns;
+y2 <= a(31 downto 16)*b(31 downto 16) after 1 ns;
+-- a/b
+--when "00011" =>
+--y1 <= a mod b after 1 ns;
+-- a+b+cin (with carry)
+--when "00100" =>
+--y1 <= a+b after 1 ns;
+-- a-b (with barrow)
+--when "00101" =>
+-- y1 <= a-b after 1 ns;
+-- a and b
+when "00110" =>
+y1 <= a and b after 1 ns;
+-- a or b
+when "00111" =>
+y1 <= a or b after 1 ns;
+-- NOT a
+when "01000" =>
+y1 <= not a after 1 ns;
+-- NOT b
+when "01001" =>
+y1 <= not b after 1 ns;
+-- a nand b
+when "01010" =>
+y1 <= a nand b after 1 ns;
+-- a nor b
+when "01011" =>
+y1 <= a nor b after 1 ns;
+-- a xor b
+when "01100" =>
+y1 <= a xor b after 1 ns;
+-- a xnor b
+when "01101" =>
+y1 <= a xnor b after 1 ns;
+-- inc a
+when "01110" =>
+y1 <= a + "00000000000000000000000000000001" after 1 ns;
+-- inc b
+when "01111" =>
+y1 <= b + "00000000000000000000000000000001" after 1 ns;
+-- dec a
+when "10000" =>
+y1 <= a - "00000000000000000000000000000001" after 1 ns;
+-- dec b
+when "10001" =>
+y1 <= b - "00000000000000000000000000000001" after 1 ns;
+-- pass a
+when "10010" =>
+y1 <= a after 1 ns;
+-- pass b
+when "10011" =>
+y1 <= b after 1 ns;
+-- zero op
+when "10100" =>
+y1 <=(others=>'0') after 1 ns;
+-- zero op
+when others =>
+y1 <= (others=>'0') after 1 ns;
+end case;
+end process;
+end bev32;
+##############################################################
+Shift Register :
+--part 6
+-- shifter unit
+--------------------------------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+--------------------------------------------------
+entity shifter is
+port(sel:in std_logic_vector (3 downto 0);
+a,b:in std_logic_vector (31 downto 0);
+y:out std_logic_vector (31 downto 0));
+end shifter;
+--------------------------------------------------
+architecture bev32 of shifter is
+begin
+process(a,b, sel)
+begin
+case sel is
+--shift left a
+when "0000" =>
+y <= a(30 downto 0) & '0' after 1 ns;
+--shift right a
+when "0001" =>
+y <= '0' & a(31 downto 1) after 1 ns;
+--rotate left a
+when "0010" =>
+y <= a(30 downto 0) & a(31) after 1 ns;
+--rotate right a
+when "0011" =>
+y <= a(0) & a(31 downto 1) after 1 ns;
+--shift left b
+when "0100" =>
+y <= b(30 downto 0) & '0' after 1 ns;
+--shift right b
+when "0101" =>
+y <= '0' & b(31 downto 1) after 1 ns;
+--rotate left b
+when "0110" =>
+y <= b(30 downto 0) & b(31) after 1 ns;
+--rotate right b
+when "0111" =>
+y <= b(0) & b(31 downto 1) after 1 ns;
+--shiftpass a
+when "1000" =>
+y <= a after 1 ns;
+--shiftpass b
+when "1001" =>
+y <= b after 1 ns;
+--shift offset address b
+when "1010" =>
+y <= "0000000000000000" & b(15 downto 0) after 1 ns;
+when others =>
+y <=(others=>'Z');
+end case;
+end process;
+end bev32;
+#########################################################
+Control Unit
+--part 7
+--control unit
+------------------------------------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+------------------------------------------------------
+entity control is
+port(ready,clock,reset,compout:in std_logic;
+instrreg:in std_logic_vector(31 downto 0);
+--ir reg input to control unit
+progcntrwr,progcntrrd:out std_logic; --pc reg ctrl
+outregwr,outregrd:out std_logic; --alu out reg ctrl
+addrregwr:out std_logic; --address reg ctrl
+opregwr,opregrd:out std_logic; --accomalotor reg ctrl
+instrwr:out std_logic; --ir reg ctrl
+regwr,regrd:out std_logic; --reg array ctrl
+regsel:out std_logic_vector (4 downto 0); --regarray cmd
+shiftsel:out std_logic_vector (3 downto 0);--shifter cmd
+alusel:out std_logic_vector (4 downto 0); --alu cmd
+compsel:out std_logic_vector (3 downto 0); --comparator cmd
+vma,rw:out std_logic);
+end control;
+---------------------------------------------------
+architecture bev32 of control is
+type state is (r1, r2, r3, r4, r5, r6, execute,nop,
+load,load1, load2, load3,
+store,store1, store2, store3,
+move,move1, move2, move3,
+incPc, incPc2, incPc3, incPc4, incPc5, incPc6,
+loadPc, loadPc2, loadPc3, loadPc4,
+braI1, braI2, braI3, braI4, braI5,
+loadI1,loadI2, loadI3, loadI4, loadI5,
+inc1, inc2,inc3,
+dec1,dec2,dec3,
+and1,and2,and3,and4,
+or1,or2,or3,or4,
+xor1,xor2,xor3,xor4,
+not1,not2,not3,not4,
+add1,add2,add3,add4,
+sub1,sub2,sub3,sub4,
+zero1,zero2,zero3,
+shl1,shl2,shl3,shl4,
+shr1,shr2,shr3,shr4,
+rotl1,rotl2,rotl3,rotl4,
+rotr1,rotr2,rotr3,rotr4,
+bgtI1, bgtI2,bgtI3, bgtI4, bgtI5, bgtI6,bgtI7, bgtI8, bgtI9,
+bltI1,bltI2,bltI3,bltI4,bltI5,bltI6,bltI7,bltI8,bltI9,
+bnei1,bnei2,bnei3,bnei4,bnei5,bnei6,bnei7,bnei8,bnei9,
+bei1,bei2,bei3,bei4,bei5,bei6,bei7,bei8,bei9,
+bltei1,bltei2,bltei3,bltei4,bltei5,bltei6,bltei7,bltei8,bltei9,
+b1,b2,b3,b4,b5,b6,b7,b8,b9,
+blt1,blt2,blt3,
+bne1,bne2,bne3,
+bgt1,bgt2,bgt3,
+be1,be2,be3,
+blte1,blte2,blte3
+);
+signal current_state, next_state : state;
+begin
+nxtstateproc: process( current_state, instrReg, compout, ready)
+begin
+progCntrWr <= '0';
+progCntrRd <= '0';
+addrRegWr <= '0';
+outRegWr <= '0';
+outRegRd <= '0';
+shiftSel <= "1000"; --pass a
+aluSel <= "10010"; --pass a
+compSel <= "0000"; -- equal
+opRegRd <= '0';
+opRegWr <= '0';
+instrWr <= '0';
+regSel <= "00000";
+regRd <= '0';
+regWr <= '0';
+rw <= '0';
+vma <= '0';
+case current_state is
+when r1 =>
+aluSel <= "10100" ; --out put zero
+shiftSel <= "1000"; --pass a
+next_state <= r2;
+when r2 =>
+aluSel <= "10100"; --out put zero
+shiftSel <= "1000"; --passd a
+outRegWr <= '1';
+next_state <= r3;
+when r3 =>
+outRegRd <= '1';
+next_state <= r4;
+when r4 =>
+outRegRd <= '1';
+progCntrWr <= '1';
+addrRegWr <= '1';
+next_state <= r5;
+when r5 =>
+vma <= '1';
+rw <= '0';
+next_state <= r6;
+when r6 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+instrWr <= '1';
+next_state <= execute;
+else
+next_state <= r6;
+end if;
+---------------------------------------------------------------
+---------------------------------------------------------------
+---------------------------------------------------------------
+when execute =>
+case instrReg(31 downto 27) is
+-- nop no operation
+when "00000" =>
+next_state <= incPc;
+-- load the rigister from memory
+when "00001" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= load1;
+-- store in memory
+when "00010" =>
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+next_state <= store1;
+-- move reg to reg
+when "00011" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+aluSel <= "10010"; --alu pass a
+shiftSel <= "1000"; --shift pass
+next_state <= move1;
+-- loadI (load with indiate value)
+when "00100" =>
+progcntrRd <= '1';
+alusel <= "01110"; --alu a increace
+shiftSel <= "1000"; --shift pass
+next_state <= loadI1;
+-- BranchI branch to immediate adderss
+when "00101" =>
+progcntrRd <= '1';
+alusel <= "01110"; --increase pc
+shiftsel <= "1000"; --pass
+next_state <= braI1;
+-- BranchGTI branch greater then to immediate adderss
+when "00110" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= bgtI1;
+-- inc increment register by 1
+when "00111" =>
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+alusel <= "01110"; --increase reg(2-0)by 1
+shiftsel <= "1000"; --pass
+next_state <= inc1;
+-- dec alu
+when "01000" =>
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+alusel <= "10000"; --decrease reg(2-0) by 1
+shiftsel <= "1000"; --pass
+next_state <= dec1;
+--and1 alu
+when "01001" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= and1;
+--or1 alu
+when "01010" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= or1;
+--xor1 alu
+when "01011" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= xor1;
+--not1 alu
+when "01100" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= not1;
+--add1 alu
+when "01101" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= add1;
+--sub1 alu
+when "01110" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= sub1;
+--zero1 alu
+when "01111" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= zero1;
+-- BranchLTI branch less then to immediate adderss
+when "10000" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= bltI1;
+-- BranchLT branch less then
+when "10001" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= blt1;
+-- Branchneq branch not equal
+when "10010" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= bne1;
+-- BranchneqI branch not equal to immediate adderss
+when "10011" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= bneI1;
+-- Branchgt branch greater then
+when "10100" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= bgt1;
+-- Branch branch all time
+when "10101" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= b1;
+-- Branche branch equal
+when "10110" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= be1;
+-- BrancheqI branch less equal to immediate adderss
+when "10111" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= beI1;
+-- BranchLTeI branch less equal then to immediate adderss
+when "11000" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= blteI1;
+-- BranchLte branch less or equal
+when "11001" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= blte1;
+--shl1 shift left
+when "11010" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= shl1;
+--shr1 alu
+when "11011" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= shr1;
+--rotr1 alu
+when "11100" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= rotr1;
+--rotl1 alu
+when "11101" =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= rotl1;
+when others =>
+next_state <= incPc;
+end case;
+----------------------------------------------
+-----------------------------------------------
+-----------------------------------------------
+-- loading the register
+when load1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+addrregWr <= '1';
+next_state <= load2;
+when load2 =>
+vma <= '1';
+rw <= '0';
+next_state <= load3;
+when load3 =>
+vma <= '1';
+rw <= '0';
+regSel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+-----------------------------------------------
+-- store in memory
+when store1 =>
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+addrregWr <= '1';
+next_state <= store2;
+when store2 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+next_state <= store3;
+when store3 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+vma <= '1';
+rw <= '1';
+next_state <= incPc;
+-----------------------------------------------
+--move reg to reg
+when move1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+aluSel <= "10010";
+shiftsel <= "1000";
+outRegWr <= '1';
+next_state <= move2;
+when move2 =>
+outRegRd <= '1';
+next_state <= move3;
+when move3 =>
+outRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+-----------------------------------------------------
+-- load immediate
+when loadI1 =>
+progcntrRd <= '1';
+alusel <= "01110"; --alu a increace
+shiftsel <= "1000";
+outregWr <= '1';
+next_state <= loadI2;
+when loadI2 =>
+outregRd <= '1';
+next_state <= loadI3;
+when loadI3 =>
+outregRd <= '1';
+progcntrWr <= '1';
+addrregWr <= '1';
+next_state <= loadI4;
+when loadI4 =>
+vma <= '1';
+rw <= '0';
+next_state <= loadI5;
+when loadI5 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+regSel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+else
+next_state <= loadI5;
+end if;
+-----------------------------------------------------
+-- branch immediate
+when braI1 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increase pc
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= braI2;
+when braI2 =>
+outregRd <= '1';
+next_state <= braI3;
+when braI3 =>
+outregRd <= '1';
+progcntrWr <= '1';
+addrregWr <= '1';
+next_state <= braI4;
+when braI4 =>
+vma <= '1';
+rw <= '0';
+next_state <= braI5;
+when braI5 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+progcntrWr <= '1';
+next_state <= loadPc;
+else
+next_state <= braI5;
+end if;
+-----------------------------------------------
+--branch greater then immediate
+when bgtI1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= bgtI2;
+when bgtI2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0010"; --greater then
+next_state <= bgtI3;
+when bgtI3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0010"; --greater then
+if compout = '1' then
+next_state <= bgtI4;
+else
+next_state <= incPc;
+end if;
+when bgtI4 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftSel <= "1000"; --pass
+next_state <= bgtI5;
+when bgtI5 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= bgtI6;
+when bgtI6 =>
+outregRd <= '1';
+next_state <= bgtI7;
+when bgtI7 =>
+outregRd <= '1';
+progcntrWr <= '1';
+addrregWr <= '1';
+next_state <= bgtI8;
+when bgtI8 =>
+vma <= '1';
+rw <= '0';
+next_state <= bgtI9;
+when bgtI9 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+progcntrWr <= '1';
+next_state <= loadPc;
+else
+next_state <= bgtI9;
+end if;
+-------------------------------------------------
+--inc increase register by 1
+when inc1 =>
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+alusel <= "01110"; --increace reg(2-0)
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= inc2;
+when inc2 =>
+outregRd <= '1';
+next_state <= inc3;
+when inc3 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+--------------------------------------------
+--dec decrease register by 1
+when dec1 =>
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+alusel <= "10000"; --decreace reg(2-0)
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= dec2;
+when dec2 =>
+outregRd <= '1';
+next_state <= dec3;
+when dec3 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+--------------------------------------------
+--and1
+when and1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= and2;
+when and2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+alusel <= "00110"; --alu and
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= and3;
+when and3 =>
+outregRd <= '1';
+next_state <= and4;
+when and4 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+--------------------------------------------
+--or1 alu
+when or1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= or2;
+when or2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+alusel <= "00111"; --alu or
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= or3;
+when or3 =>
+outregRd <= '1';
+next_state <= or4;
+when or4 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+--------------------------------------------
+--xor1 alu
+when xor1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= xor2;
+when xor2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+alusel <= "01100"; --alu xor
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= xor3;
+when xor3 =>
+outregRd <= '1';
+next_state <= xor4;
+when xor4 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+-------------------------------------------------
+--not1 alu
+when not1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+--opRegWr <= '1';
+next_state <= not2;
+when not2 =>
+--opRegRd <= '1';
+--regSel <= instrReg(20 downto 16);
+--regRd <= '1';
+alusel <= "01000"; --alu not
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= not3;
+when not3 =>
+outregRd <= '1';
+next_state <= not4;
+when not4 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+----------------------------------------------
+--sub1 alu
+when sub1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= sub2;
+when sub2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+alusel <= "00001"; --alu add
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= sub3;
+when sub3 =>
+outregRd <= '1';
+next_state <= sub4;
+when sub4 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+--------------------------------------------
+--zero1 alu
+when zero1 =>
+alusel <= "10100"; --alu not
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= zero2;
+when zero2 =>
+outregRd <= '1';
+next_state <= zero3;
+when zero3 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+----------------------------------------------------
+--blti1 branch less then immediate
+when bltI1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= bltI2;
+when bltI2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0011"; --less then
+next_state <= bltI3;
+when bltI3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0011"; --less then
+if compout = '1' then
+next_state <= bltI4;
+else
+next_state <= incPc;
+end if;
+when bltI4 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftSel <= "1000"; --pass
+next_state <= bltI5;
+when bltI5 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= bltI6;
+when bltI6 =>
+outregRd <= '1';
+next_state <= bltI7;
+when bltI7 =>
+outregRd <= '1';
+progcntrWr <= '1';
+addrregWr <= '1';
+next_state <= bltI8;
+when bltI8 =>
+vma <= '1';
+rw <= '0';
+next_state <= bltI9;
+when bltI9 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+progcntrWr <= '1';
+next_state <= loadPc;
+else
+next_state <= bltI9;
+end if;
+-----------------------------------------------------
+-- bnei1 branch not equal to immediate
+when bneI1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= bneI2;
+when bneI2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0001"; --not equal then
+next_state <= bneI3;
+when bneI3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0001"; --not equal then
+if compout = '1' then
+next_state <= bneI4;
+else
+next_state <= incPc;
+end if;
+when bneI4 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftSel <= "1000"; --pass
+next_state <= bneI5;
+when bneI5 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= bneI6;
+when bneI6 =>
+outregRd <= '1';
+next_state <= bneI7;
+when bneI7 =>
+outregRd <= '1';
+progcntrWr <= '1';
+addrregWr <= '1';
+next_state <= bneI8;
+when bneI8 =>
+vma <= '1';
+rw <= '0';
+next_state <= bneI9;
+when bneI9 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+progcntrWr <= '1';
+next_state <= loadPc;
+else
+next_state <= bneI9;
+end if;
+----------------------------------------------------
+--bei1
+when beI1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= beI2;
+when beI2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0000"; --equal
+next_state <= beI3;
+when beI3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0000"; --equal
+if compout = '1' then
+next_state <= beI4;
+else
+next_state <= incPc;
+end if;
+when beI4 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftSel <= "1000"; --pass
+next_state <= beI5;
+when beI5 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= beI6;
+when beI6 =>
+outregRd <= '1';
+next_state <= beI7;
+when beI7 =>
+outregRd <= '1';
+progcntrWr <= '1';
+addrregWr <= '1';
+next_state <= beI8;
+when beI8 =>
+vma <= '1';
+rw <= '0';
+next_state <= beI9;
+when beI9 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+progcntrWr <= '1';
+next_state <= loadPc;
+else
+next_state <= beI9;
+end if;
+-------------------------------------------
+--branch less then equal immediate
+when blteI1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= blteI2;
+when blteI2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0101"; --less then equal
+next_state <= blteI3;
+when blteI3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0101"; --less then equal
+if compout = '1' then
+next_state <= blteI4;
+else
+next_state <= incPc;
+end if;
+when blteI4 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftSel <= "1000"; --pass
+next_state <= blteI5;
+when blteI5 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increace pc
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= blteI6;
+when blteI6 =>
+outregRd <= '1';
+next_state <= blteI7;
+when blteI7 =>
+outregRd <= '1';
+progcntrWr <= '1';
+addrregWr <= '1';
+next_state <= blteI8;
+when blteI8 =>
+vma <= '1';
+rw <= '0';
+next_state <= blteI9;
+when blteI9 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+progcntrWr <= '1';
+next_state <= loadPc;
+else
+next_state <= blteI9;
+end if;
+--------------------------------------------
+----------------------------------------------
+----------------------------------------------
+--branch less then
+when blt1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= blt2;
+when blt2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0011"; -- less then
+next_state <= blt3;
+when blt3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0011"; -- less than
+if compout = '1' then
+next_state <= b1;
+else
+next_state <= incPc;
+end if;
+----------------------------------------------
+--branch not equal
+when bne1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= bne2;
+when bne2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0001"; --not equal
+next_state <= bne3;
+when bne3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0001"; --not equal
+if compout = '1' then
+next_state <= b1;
+else
+next_state <= incPc;
+end if;
+------------------------------------------------
+--branch greater then
+when bgt1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= bgt2;
+when bgt2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0010"; -- greater then
+next_state <= bgt3;
+when bgt3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0010"; -- greater than
+if compout = '1' then
+next_state <= b1;
+else
+next_state <= incPc;
+end if;
+------------------------------------------------
+--branch all time
+when b1 =>
+vma <= '1';
+rw <= '0';
+next_state <= b2;
+when b2 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+opregWr <= '1';
+next_state <= b3;
+else
+next_state <= b2;
+end if;
+--
+--
+--
+--
+--
+when b3 =>
+opregrd <= '1';
+alusel <= "10010"; --alu pass
+shiftsel <= "1010"; --offset address
+outregWr <= '1';
+next_state <= b4;
+when b4 =>
+outregRd <= '1';
+next_state <= b5;
+when b5 =>
+outregRd <= '1';
+opregWr <= '1';
+next_state <= b6;
+--
+--
+--
+--
+--
+--
+when b6 =>
+opregRd <= '1';
+progcntrRd <= '1';
+alusel <= "00000"; --pc+off set
+shiftSel <= "1000"; --pass
+next_state <= b7;
+when b7 =>
+opregRd <= '1';
+progcntrRd <= '1';
+alusel <= "00000"; --pc + offset
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= b8;
+when b8 =>
+outregRd <= '1';
+next_state <= b9;
+when b9 =>
+outregRd <= '1';
+progcntrWr <= '1';
+addrregWr <= '1';
+next_state <= Loadpc;
+----------------------------------------------
+--branch equal
+when be1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= be2;
+when be2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0000"; -- equal
+next_state <= be3;
+when be3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0000"; -- equal
+if compout = '1' then
+next_state <= b1;
+else
+next_state <= incPc;
+end if;
+--------------------------------------------
+--branch less then equal
+when blte1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+opRegWr <= '1';
+next_state <= blte2;
+when blte2 =>
+opRegRd <= '1';
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0101"; --less then equal
+next_state <= blte3;
+when blte3 =>
+opRegRd <= '1' after 1 ns;
+regSel <= instrReg(20 downto 16);
+regRd <= '1';
+compsel <= "0101"; --less then equal
+if compout = '1' then
+next_state <= b1;
+else
+next_state <= incPc;
+end if;
+-----------------------------------------------
+--------------------------------------------
+--------------------------------------------
+--shl1 shift left
+when shl1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+--opRegWr <= '1';
+next_state <= shl2;
+when shl2 =>
+--opRegRd <= '1';
+--regSel <= instrReg(20 downto 16);
+--regRd <= '1';
+alusel <= "10010"; --alu pass
+shiftsel <= "0000"; --shl
+outregWr <= '1';
+next_state <= shl3;
+when shl3 =>
+outregRd <= '1';
+next_state <= shl4;
+when shl4 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+----------------------------------------------------
+--shr1 shift right
+when shr1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+--opRegWr <= '1';
+next_state <= shr2;
+when shr2 =>
+--opRegRd <= '1';
+--regSel <= instrReg(20 downto 16);
+--regRd <= '1';
+alusel <= "10010"; --alu pass
+shiftsel <= "0001"; --shr
+outregWr <= '1';
+next_state <= shr3;
+when shr3 =>
+outregRd <= '1';
+next_state <= shr4;
+when shr4 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+----------------------------------------------------
+--rotl1 rotate left
+when rotl1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+--opRegWr <= '1';
+next_state <= rotl2;
+when rotl2 =>
+--opRegRd <= '1';
+--regSel <= instrReg(20 downto 16);
+--regRd <= '1';
+alusel <= "10010"; --alu pass
+shiftsel <= "0010"; --rotl
+outregWr <= '1';
+next_state <= rotl3;
+when rotl3 =>
+outregRd <= '1';
+next_state <= rotl4;
+when rotl4 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+----------------------------------------------------
+--rotr1 rotate right
+when rotr1 =>
+regSel <= instrReg(25 downto 21);
+regRd <= '1';
+--opRegWr <= '1';
+next_state <= rotr2;
+when rotr2 =>
+--opRegRd <= '1';
+--regSel <= instrReg(20 downto 16);
+--regRd <= '1';
+alusel <= "10010"; --alu pass
+shiftsel <= "0011"; --rotr
+outregWr <= '1';
+next_state <= rotr3;
+when rotr3 =>
+outregRd <= '1';
+next_state <= rotr4;
+when rotr4 =>
+outregRd <= '1';
+regsel <= instrReg(20 downto 16);
+regWr <= '1';
+next_state <= incPc;
+--------------------------------------------
+when loadPc =>
+progcntrRd <= '1';
+next_state <= loadPc2;
+when loadPc2 =>
+progcntrRd <= '1';
+addrRegWr <= '1';
+next_state <= loadPc3;
+when loadPc3 =>
+vma <= '1';
+rw <= '0';
+next_state <= loadPc4;
+when loadPc4 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+instrWr <= '1';
+next_state <= execute;
+else
+next_state <= loadPc4;
+end if;
+------------------------------------------
+-------------------------------------------
+when incPc =>
+progcntrRd <= '1';
+alusel <= "01110"; --increase pc
+shiftsel <= "1000"; --pass
+next_state <= incPc2;
+when incPc2 =>
+progcntrRd <= '1';
+alusel <= "01110"; --increase pc
+shiftsel <= "1000"; --pass
+outregWr <= '1';
+next_state <= incPc3;
+when incPc3 =>
+outregRd <= '1';
+next_state <= incPc4;
+when incPc4 =>
+outregRd <= '1';
+progcntrWr <= '1';
+addrregWr <= '1';
+next_state <= incPc5;
+when incPc5 =>
+vma <= '1';
+rw <= '0';
+next_state <= incPc6;
+when incPc6 =>
+vma <= '1';
+rw <= '0';
+if ready = '1' then
+instrWr <= '1';
+next_state <= execute;
+else
+next_state <= incPc6;
+end if;
+when others =>
+next_state <= incPc;
+end case;
+end process;
+-----------------------------------------------------
+-----------------------------------------------------
+controlffProc: process(clock, reset)
+begin
+if reset = '1' then
+current_state <= r1 after 1 ns;
+elsif clock'event and clock = '1' then
+current_state <= next_state after 1 ns;
+end if;
+end process;
+end bev32;
+#######################################################
+Memory Unit :
+--memory unit
+---------------------------------------------
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.std_logic_arith.all;
+use IEEE.std_logic_unsigned.all;
+--use work.cpu_math.all;
+---------------------------------------------
+entity mem is
+port (addr : in std_logic_vector (31 downto 0);
+sel, rw : in std_logic;
+ready : out std_logic;s
+data : inout std_logic_vector (31 downto 0));
+end mem;
+---------------------------------------------
+architecture behave of mem is
+begin
+process(addr, sel, rw)
+type t_mem is array(0 to 63) of std_logic_vector (31 downto 0);
+variable mem_data : t_mem :=
+("00100000000000010000000000000000", --- 0 loadI 1, #
+-- load source address
+"00000000000000000000000000010000", --- 1 10
+"00100000000000100000000000000000", --- 2 loadI 2, #
+-- load destination address
+"00000000000000000000000000110000", --- 3 30
+"00100000000001100000000000000000", --- 4 loadI 6, #
+-- load data end address
+"00000000000000000000000000111111", --- 5 3F
+"00001000000010110000000000000000", --- 6 load 1, 3
+-- load reg3 with source element
+"00010000011000100000000000000000", --- 7 store 3, 2
+-- store reg3 at destination
+"00110000001001100000000000000000", --- 8 bgtI 1, 6, #
+-- compare to see if at end of data
+"00000000000000000000000000000000", --- 9 00
+-- if so just start over
+"00111000000000010000000000000000", --- A inc 1
+-- move source address to next
+"00111000000000100000000000000000", --- B inc 2
+-- move destination address to next
+"00101000000011110000000000000000", --- C braI #
+-- go to the next element to copy
+"00000000000000000000000000000110", --- D 06
+"00000000000000000000000000000000", --- E
+"00000000000000000000000000000000", --- F
+"00000000000000000000000000000001", --- 10
+--- Start of source array
+"00000000000000000000000000000010", --- 11
+"00000000000000000000000000000011", --- 12
+"00000000000000000000000000000100", --- 13
+"00000000000000000000000000000101", --- 14
+"00000000000000000000000000000110", --- 15
+"00000000000000000000000000000111", --- 16
+"00000000000000000000000000001000", --- 17
+"00000000000000000000000000001001", --- 18
+"00000000000000000000000000001010", --- 19
+"00000000000000000000000000001011", --- 1A
+"00000000000000000000000000001100", --- 1B
+"00000000000000000000000000001101", --- 1C
+"00000000000000000000000000001110", --- 1D
+"00000000000000000000000000001111", --- 1E
+"00000000000000000000000000010000", --- 1F
+"00000000000000000000000000000000", --- 20
+"00000000000000000000000000000000", --- 21
+"00000000000000000000000000000000", --- 22
+"00000000000000000000000000000000", --- 23
+"00000000000000000000000000000000", --- 24
+"00000000000000000000000000000000", --- 25
+"00000000000000000000000000000000", --- 26
+"00000000000000000000000000000000", --- 27
+"00000000000000000000000000000000", --- 28
+"00000000000000000000000000000000", --- 29
+"00000000000000000000000000000000", --- 2A
+"00000000000000000000000000000000", --- 2B
+"00000000000000000000000000000000", --- 2C
+"00000000000000000000000000000000", --- 2D
+"00000000000000000000000000000000", --- 2E
+"00000000000000000000000000000000", --- 2F
+"00000000000000000000000000000000", --- 30
+-- start of destination array
+"00000000000000000000000000000000", --- 31
+"00000000000000000000000000000000", --- 32
+"00000000000000000000000000000000", --- 33
+"00000000000000000000000000000000", --- 34
+"00000000000000000000000000000000", --- 35
+"00000000000000000000000000000000", --- 36
+"00000000000000000000000000000000", --- 37
+"00000000000000000000000000000000", --- 38
+"00000000000000000000000000000000", --- 39
+"00000000000000000000000000000000", --- 3A
+"00000000000000000000000000000000", --- 3B
+"00000000000000000000000000000000", --- 3C
+"00000000000000000000000000000000", --- 3D
+"00000000000000000000000000000000", --- 3E
+"00000000000000000000000000000000"); --- 3F
+begin
+data <= "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ";
+ready <= '0';
+if sel = '1' then
+if rw = '0' then
+data <= mem_data(CONV_INTEGER(addr(31 downto 0))) after 1 ns;
+ready <= '1';
+elsif rw = '1' then
+mem_data(CONV_INTEGER(addr(31 downto 0))) := data;
+end if;
+else
+data <= "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ" after 1 ns;
+end if;
+end process;
+end behave;
+--------------------------------------------------------------
